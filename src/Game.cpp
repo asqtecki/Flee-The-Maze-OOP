@@ -7,22 +7,28 @@
 bool Game::isAtExit() const {
     float cellSize = maze->getCellSize();
     Vector3 pos = player.getPosition();
-    //convert to grid coords from world coords
     int col = (int)floor(pos.x/cellSize);
     int row = (int)floor(pos.z/cellSize);
     if (col<0) col = 0;
     if (row<0) row = 0;
-    if (col>=maze->getColumn()) col = maze->getColumn() - 1;
-    if (row>=maze->getRow()) row = maze->getRow() - 1;
+    if (col>=maze->getColumn()) col = maze->getColumn();
+    if (row>=maze->getRow()) row = maze->getRow();
     auto exit = maze->getExit();
     return (row==exit.first && col==exit.second);
 }
 
 Game::Game(Model wall) : wallModel(wall) {
+    int w = GetScreenWidth(); 
+    int h = GetScreenHeight();
+
+    menuBg = LoadTexture("Graphics/menu_bg.png");
+
     InitAudioDevice();
     permBgSound = LoadMusicStream("Music/bgsound.mp3");
     SetMusicVolume(permBgSound, 0.25f);
-    PlayMusicStream(permBgSound);
+    menuSound = LoadMusicStream("Music/menuMus.mp3");
+    SetMusicVolume(menuSound, 0.3f);
+    PlayMusicStream(menuSound);
 
     exit = LoadSound("Music/winner.mp3");
     exitPlayed = false;
@@ -35,7 +41,13 @@ Game::Game(Model wall) : wallModel(wall) {
     loadingDuration = 2.5f;
     jumpscareDuration = 2.0f;
     ghostPerLevel = 1;
-    state = PLAYING;
+    state = MENU;
+    lastState = MENU;
+
+    playBtn = new Button("Graphics/play.png", {w/2.0f-200, h/2.0f-120}, 1.0f);
+    tutorBtn = new Button("Graphics/tutorial.png", {w/2.0f-200, h/2.0f-10}, 1.0f);
+    exitBtn = new Button("Graphics/exit.png", {w/2.0f-200, h/2.0f+100}, 1.0f);
+    backBtn = new Button("Graphics/back.png", {20, 20}, 1.0f);
 
     grass = LoadTexture("Graphics/grass.png");
     SetTextureWrap(grass, TEXTURE_WRAP_REPEAT);
@@ -50,7 +62,7 @@ Game::Game(Model wall) : wallModel(wall) {
     grassModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = grass;
 
     float cx, cz;
-    cx = cz = mazeSize * maze->getCellSize()/2.0f; //centre of maze {cx, cz}
+    cx = cz = mazeSize * maze->getCellSize()/2.0f;
     for (int i=0;i<150;i++) {
         Star s;
         s.position = {
@@ -71,7 +83,7 @@ Game::Game(Model wall) : wallModel(wall) {
         entrance.first * cellSize + cellSize/2.0f
     });
     float cs = maze->getCellSize();
-    for (int i=0;i<ghostPerLevel;i++) {
+    for (int i = 0; i < ghostPerLevel; i++) {
         int gr, gc;
         do {
             gr = std::rand() % mazeSize;
@@ -79,10 +91,40 @@ Game::Game(Model wall) : wallModel(wall) {
         } while (abs(gr-entrance.first)<3 || abs(gc-entrance.second)<3);
         ghosts.enqueue(Ghost({gc*cs+cs/2.0f, 1.0f, gr*cs+cs/2.0f}));
     }
+    EnableCursor();
 }
 
 void Game::Update() {
     UpdateMusicStream(permBgSound);
+    UpdateMusicStream(menuSound);
+    if (state!=lastState) {
+        if (state==PLAYING) {
+            DisableCursor();
+            StopMusicStream(menuSound);
+            PlayMusicStream(permBgSound);
+        }
+        else if (state==MENU) {
+            EnableCursor();
+            StopMusicStream(permBgSound);
+            PlayMusicStream(menuSound);
+        }
+        else EnableCursor();
+        lastState = state;
+    }
+    if (state==MENU) {
+        Vector2 mouse = GetMousePosition();
+        bool cl = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
+        if (playBtn->isClicked(mouse, cl)) state = PLAYING;
+        if (exitBtn->isClicked(mouse, cl)) CloseWindow();
+        if (tutorBtn->isClicked(mouse, cl)) state = TUTORIAL;
+        return;
+    }
+    if (state==TUTORIAL) {
+        Vector2 mouse = GetMousePosition();
+        bool cl = IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
+        if (backBtn->isClicked(mouse, cl)) state = MENU;
+        return;
+    }
     if (state==PLAYING) {
         if (!IsMusicStreamPlaying(permBgSound)) PlayMusicStream(permBgSound);
         player.Update(maze);
@@ -128,7 +170,7 @@ void Game::Update() {
                 entrance.first * cs + cs/2.0f
             });
             ghosts.clear();
-            for (int i=0;i<ghostPerLevel;i++) {
+            for (int i = 0; i < ghostPerLevel; i++) {
                 int gr, gc;
                 do {
                     gr = std::rand() % mazeSize;
@@ -165,9 +207,9 @@ void Game::Update() {
             for (int i=0;i<150;i++) {
                 Star s;
                 s.position = {
-                    cx + (float)(std::rand()%200 - 100),
-                    (float)(15 + std::rand()%20),
-                    cz + (float)(std::rand()%200 - 100)
+                    cx + (float)(std::rand() % 200 - 100),
+                    (float)(15 + std::rand() % 20),
+                    cz + (float)(std::rand() % 200 - 100)
                 };
                 s.size = 0.1f + (std::rand() % 10) / 30.0f;
                 s.twinkles = (std::rand() % 100) / 100.0f;
@@ -182,22 +224,23 @@ void Game::Update() {
             });
             ghosts.clear();
             ghostPerLevel += 2;  // +2 ghosts each level
-            Queue<Ghost> newgs;
+            Queue<Ghost> newGs;
             auto ent = maze->getEntrance();
             float cs = maze->getCellSize();
             for (int i=0;i<ghostPerLevel;i++) {
-                int gr, gc;
+                int r, c;
                 do {
-                    gr = std::rand() % mazeSize;
-                    gc = std::rand() % mazeSize;
-                } while (abs(gr-ent.first)<3 || abs(gc-ent.second)<3);
-                newgs.enqueue(Ghost({gc*cs+cs/2.0f, 1.0f, gr*cs+cs/2.0f}));
+                    r = std::rand() % mazeSize;
+                    c = std::rand() % mazeSize;
+                } while (abs(r-ent.first)<3 || abs(c-ent.second)<3);
+                newGs.enqueue(Ghost({c*cs+cs/2.0f, 1.0f, r*cs+cs/2.0f}));
             }
-            ghosts += newgs;
-            for (int i=0;i<ghosts.getSize();i++) ghosts[i].setRepathDelay(0.8f+(level*0.2f));
+            ghosts += newGs;
+            for (int i=0;i<ghosts.getSize();i++)
+                ghosts[i].setRepathDelay(0.8f+(level*0.2f));
             Queue<Ghost> sg;
-            for (int i=0;i<4;i++) sg.enqueue(Ghost({0, 0, 0}));
-            if (ghosts>sg) {
+            for (int i=0; i<4; i++) sg.enqueue(Ghost({0,0,0}));
+            if (ghosts > sg) {
                 for (auto& g : ghosts) g.setRepathDelay(0.4f);
             }
             exitPlayed = false;
@@ -207,11 +250,76 @@ void Game::Update() {
     }
     else if (state==CLEAR) {
         loadingTimer += GetFrameTime();
-        if (loadingTimer>=3.0f) CloseWindow();
+        if (loadingTimer>=3.0f) {
+            mazeSize = 5;
+            level = 1;
+            ghostPerLevel = 1;
+            delete maze;
+            maze = new Maze(mazeSize, mazeSize);
+            maze->generateMaze();
+            UnloadModel(grassModel);
+            float s = mazeSize * maze->getCellSize();
+            Mesh plane = GenMeshPlane(s, s, 1, 1);
+            grassModel = LoadModelFromMesh(plane);
+            grassModel.materials[0].maps[MATERIAL_MAP_DIFFUSE].texture = grass;
+            auto ent = maze->getEntrance();
+            float cs = maze->getCellSize();
+            player = Player({
+                ent.second * cs + cs/2.0f,
+                1.0f,
+                ent.first * cs + cs/2.0f
+            });
+            ghosts.clear();
+            for (int i=0; i<ghostPerLevel;i++) {
+                int r, c;
+                do {
+                    r = std::rand() % mazeSize;
+                    c = std::rand() % mazeSize;
+                } while (abs(r-ent.first)<3 || abs(c-ent.second)<3);
+                ghosts.enqueue(Ghost({c*cs+cs/2.0f, 1.0f, r*cs+cs/2.0f}));
+            }
+            exitPlayed = false;
+            loadingTimer = 0.0f;
+            state = MENU;
+        }
     }
 }
 
 void Game::Draw() {
+    if (state==MENU) {
+        BeginDrawing();
+        ClearBackground(BLACK);
+        int w = GetScreenWidth();
+        DrawTexture(menuBg, 0, 0, WHITE);
+        DrawText("FLEE THE MAZE",
+            w/2 - MeasureText("FLEE THE MAZE", 50)/2,
+            60, 50, (Color){180, 0, 0, 255}
+        );
+        playBtn->Draw();
+        tutorBtn->Draw();
+        exitBtn->Draw();
+        EndDrawing();
+        return;
+    }
+    if (state == TUTORIAL) {
+        BeginDrawing();
+        ClearBackground(BLACK);
+        int w = GetScreenWidth();
+        DrawText("HOW TO PLAY",
+            w/2 - MeasureText("HOW TO PLAY", 50)/2,
+            60, 50, {180, 0, 0, 255}
+        );
+        DrawText("WASD         -  Move",            w/2 - 200, 180, 26, WHITE);
+        DrawText("Mouse        -  Look Around",     w/2 - 200, 220, 26, WHITE);
+        DrawText("Shift        -  Sprint",          w/2 - 200, 260, 26, WHITE);
+        DrawText("Objective    -  Reach the exit",  w/2 - 200, 320, 26, YELLOW);
+        DrawText("Avoid        -  The ghosts!",     w/2 - 200, 360, 26, YELLOW);
+        DrawText("3 Levels     -  Each bigger",     w/2 - 200, 400, 26, GRAY);
+        DrawText("               and deadlier",     w/2 - 200, 435, 26, GRAY);
+        backBtn->Draw();
+        EndDrawing();
+        return;
+    }
     if (state==LOADING) {
         BeginDrawing();
         ClearBackground(BLACK);
@@ -278,11 +386,17 @@ void Game::Draw() {
 
 Game::~Game() {
     delete maze;
+    delete playBtn;
+    delete tutorBtn;
+    delete exitBtn;
+    delete backBtn;
     UnloadModel(wallModel);
     UnloadModel(grassModel);
     UnloadTexture(grass);
     UnloadTexture(ghost);
+    UnloadTexture(menuBg);
     UnloadMusicStream(permBgSound);
+    UnloadMusicStream(menuSound);
     CloseAudioDevice();
     UnloadSound(exit);
     UnloadSound(jumpscare);
