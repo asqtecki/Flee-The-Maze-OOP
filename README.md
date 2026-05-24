@@ -76,7 +76,6 @@ Note: Run `game.exe` from the project root directory to ensure the
 ---
 
 # Future Improvements/Changes
-* Add a menu with Play/Tutorial/Exit buttons.
 * Better lightings and sound effects.
 * Differ between entrance and exit using an icon.
 * Introduce a goal before finding an exit.
