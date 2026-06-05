@@ -26,11 +26,14 @@ class Game {
     GameState lastState;
 
     //sounds and music
+    Sound beat;
+    Sound chase;
     Music permBgSound;
     Music menuSound;
     Sound exit;
     Sound jumpscare;
     bool exitPlayed;
+    bool chasePlayed;
 
     //menu
     Button* playBtn;

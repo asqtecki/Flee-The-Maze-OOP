@@ -35,6 +35,11 @@ Game::Game(Model wall) : wallModel(wall) {
 
     jumpscare = LoadSound("Music/jumpscare.mp3");
 
+    beat = LoadSound("Music/heartbeat.mp3");
+    chase = LoadSound("Music/chase.mp3");
+    SetSoundVolume(beat, 0.0f);
+    chasePlayed = false;
+
     mazeSize = 5;
     level = 1;
     loadingTimer = jumpscareTimer = 0.0f;
@@ -106,6 +111,10 @@ void Game::Update() {
         else if (state==MENU) {
             EnableCursor();
             StopMusicStream(permBgSound);
+            StopSound(beat);
+            StopSound(chase);
+            SetSoundVolume(beat, 0.0f);
+            chasePlayed = false;
             PlayMusicStream(menuSound);
         }
         else EnableCursor();
@@ -137,8 +146,43 @@ void Game::Update() {
                 state = JUMPSCARE;
                 jumpscareTimer = 0.0f;
                 PlaySound(jumpscare);
+                StopSound(beat);
+                StopSound(chase);
+                SetSoundVolume(beat, 0.0f);
+                chasePlayed = false;
                 PauseMusicStream(permBgSound);
             }
+        }
+        float closeDist = 999.0f; //distance to closest ghost
+        for (auto& g : ghosts) {
+            float dx = g.getPosition().x - player.getPosition().x;
+            float dz = g.getPosition().z - player.getPosition().z;
+            float dist = sqrtf(dx*dx + dz*dz);
+            if (dist<closeDist) closeDist = dist;
+        }
+        if (closeDist<=3.0f) {
+            StopSound(beat);
+            SetSoundVolume(beat, 0.0f);
+            PauseMusicStream(permBgSound);
+            if (!IsSoundPlaying(chase)) PlaySound(chase);
+        }
+        else if (closeDist<=8.0f) {
+            chasePlayed = false;
+            StopSound(chase);
+            float vol = 1.0f - (closeDist/8.0f);
+            vol = fmaxf(0.0f, fminf(1.0f, vol));
+            SetSoundVolume(beat, vol);
+            SetMusicVolume(permBgSound, 0.25f * (1.0f - vol));
+            if (!IsSoundPlaying(beat)) PlaySound(beat);
+            if (!IsMusicStreamPlaying(permBgSound)) PlayMusicStream(permBgSound);
+        }
+        else {
+            chasePlayed = false;
+            StopSound(beat);
+            StopSound(chase);
+            SetSoundVolume(beat, 0.0f);
+            SetMusicVolume(permBgSound, 0.25f);
+            if (!IsMusicStreamPlaying(permBgSound)) PlayMusicStream(permBgSound);
         }
         for (auto& s : stars) s.twinkles += GetFrameTime();
         if (isAtExit()) {
@@ -146,6 +190,10 @@ void Game::Update() {
                 PlaySound(exit);
                 exitPlayed = true;
             }
+            StopSound(beat);
+            StopSound(chase);
+            SetSoundVolume(beat, 0.0f);
+            chasePlayed = false;
             state = LOADING;
             loadingTimer = 0.0f;
             PauseMusicStream(permBgSound);
@@ -400,4 +448,6 @@ Game::~Game() {
     CloseAudioDevice();
     UnloadSound(exit);
     UnloadSound(jumpscare);
+    UnloadSound(beat);
+    UnloadSound(chase);
 }
