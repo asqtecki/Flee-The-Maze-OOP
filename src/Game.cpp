@@ -48,6 +48,9 @@ Game::Game(Model wall) : wallModel(wall) {
     ghostPerLevel = 1;
     state = MENU;
     lastState = MENU;
+    fTimer = 0.0f;
+    bgVol = 0.25f;
+    beatVol = 0.0f;
 
     playBtn = new Button("Graphics/play.png", {w/2.0f-200, h/2.0f-120}, 1.0f);
     tutorBtn = new Button("Graphics/tutorial.png", {w/2.0f-200, h/2.0f-10}, 1.0f);
@@ -145,12 +148,13 @@ void Game::Update() {
             if (g.isCaught(player.getPosition())) {
                 state = JUMPSCARE;
                 jumpscareTimer = 0.0f;
-                PlaySound(jumpscare);
+                fTimer = 0.0f;
+                PauseMusicStream(permBgSound);
                 StopSound(beat);
                 StopSound(chase);
                 SetSoundVolume(beat, 0.0f);
                 chasePlayed = false;
-                PauseMusicStream(permBgSound);
+                PlaySound(jumpscare);
             }
         }
         float closeDist = 999.0f; //distance to closest ghost
@@ -160,28 +164,37 @@ void Game::Update() {
             float dist = sqrtf(dx*dx + dz*dz);
             if (dist<closeDist) closeDist = dist;
         }
+        float fadeSpeed = GetFrameTime() * 0.5f;
         if (closeDist<=3.0f) {
             StopSound(beat);
+            beatVol = 0.0f;
             SetSoundVolume(beat, 0.0f);
-            PauseMusicStream(permBgSound);
+            bgVol = fmaxf(0.0f, bgVol - fadeSpeed);
+            SetMusicVolume(permBgSound, bgVol);
+            if (bgVol<=0.0f) PauseMusicStream(permBgSound);
             if (!IsSoundPlaying(chase)) PlaySound(chase);
         }
         else if (closeDist<=8.0f) {
             chasePlayed = false;
             StopSound(chase);
-            float vol = 1.0f - (closeDist/8.0f);
-            vol = fmaxf(0.0f, fminf(1.0f, vol));
-            SetSoundVolume(beat, vol);
-            SetMusicVolume(permBgSound, 0.25f * (1.0f - vol));
+            float target = 1.0f - (closeDist / 8.0f);
+            beatVol += (target - beatVol) * fadeSpeed * 5.0f;
+            beatVol = fmaxf(0.0f, fminf(1.0f, beatVol));
+            SetSoundVolume(beat, beatVol);
             if (!IsSoundPlaying(beat)) PlaySound(beat);
+            float targetBg = 0.25f * (1.0f - beatVol);
+            bgVol += (targetBg - bgVol) * fadeSpeed * 5.0f;
+            SetMusicVolume(permBgSound, bgVol);
             if (!IsMusicStreamPlaying(permBgSound)) PlayMusicStream(permBgSound);
         }
         else {
             chasePlayed = false;
-            StopSound(beat);
             StopSound(chase);
-            SetSoundVolume(beat, 0.0f);
-            SetMusicVolume(permBgSound, 0.25f);
+            beatVol = fmaxf(0.0f, beatVol - fadeSpeed * 2.0f);
+            SetSoundVolume(beat, beatVol);
+            if (beatVol<=0.0f) StopSound(beat);
+            bgVol = fminf(0.25f, bgVol + fadeSpeed * 0.5f);
+            SetMusicVolume(permBgSound, bgVol);
             if (!IsMusicStreamPlaying(permBgSound)) PlayMusicStream(permBgSound);
         }
         for (auto& s : stars) s.twinkles += GetFrameTime();
@@ -194,6 +207,8 @@ void Game::Update() {
             StopSound(chase);
             SetSoundVolume(beat, 0.0f);
             chasePlayed = false;
+            bgVol = 0.25f;
+            beatVol = 0.0f;
             state = LOADING;
             loadingTimer = 0.0f;
             PauseMusicStream(permBgSound);
@@ -228,6 +243,8 @@ void Game::Update() {
             }
             exitPlayed = false;
             state = PLAYING;
+            bgVol = 0.25f; 
+            beatVol = 0.0f;
             PlayMusicStream(permBgSound);
         }
     }
@@ -377,8 +394,10 @@ void Game::Draw() {
         return;
     }
     if (state==JUMPSCARE) {
+        fTimer += GetFrameTime();
+        bool redc = (int)(fTimer * 10) % 2 == 0;
         BeginDrawing();
-        ClearBackground({180, 0, 0, 255});
+        ClearBackground(redc ? (Color){180, 0, 0, 255} : BLACK);
         int w = GetScreenWidth();
         int h = GetScreenHeight();
         DrawText("CAUGHT!", w/2 - MeasureText("CAUGHT!", 80)/2, h/2 - 60, 80, WHITE);

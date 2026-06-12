@@ -53,6 +53,9 @@ class Game {
     int mazeSize;
     int level;
     float loadingTimer, loadingDuration;
+    float fTimer; //flicker on jumpscare
+    float bgVol;
+    float beatVol;
     Model wallModel;
     Model grassModel;
     float jumpscareTimer, jumpscareDuration;
